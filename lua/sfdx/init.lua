@@ -1,4 +1,4 @@
-local filesystem = require("modules.filesystem")
+local filesystem = require("modules.Filesystem")
 local M = {}
 
 local function command_string(cmd, extension, file_name)
