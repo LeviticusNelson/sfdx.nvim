@@ -1,5 +1,5 @@
-local filesystem = require("filesystem")
-local M = {}
+local filesystem = require("sfdx.filesystem")
+local sfdx = {}
 
 local function command_string(cmd, extension, file_name)
 	local filetype = ""
@@ -28,16 +28,16 @@ local function execute_command(cmd)
 	vim.api.nvim_exec(":terminal " .. cmd_string, true)
 end
 
-M.get_default_username = function(name)
+sfdx.get_default_username = function(name)
 	vim.api.nvim_exec(":terminal sfdx config:set defaultusername=" .. name, false)
 end
 
-M.deploy = function()
+sfdx.deploy = function()
 	execute_command("force:source:deploy")
 end
 
-M.test = function()
+sfdx.test = function()
 	execute_command("force:apex:test:run")
 end
 
-return M
+return sfdx
