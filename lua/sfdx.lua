@@ -1,4 +1,4 @@
-local filesystem = require("sfdx.filesystem")
+local filesystem = require("filesystem")
 local sfdx = {}
 
 local function command_string(cmd, extension, file_name)
