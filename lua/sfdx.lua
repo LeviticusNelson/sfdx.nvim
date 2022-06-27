@@ -1,15 +1,18 @@
 local filesystem = require("filesystem")
+local Job = require("plenary.job")
+local Json = require("plenary.json")
 local sfdx = {}
-local terminal_method = ":terminal "
-sfdx.command_string = function(cmd, extension, file_name)
+sfdx.cmd_args = function(cmd, extension, file_name)
 	local filetype = ""
-	local pre_file = ""
-	local post_file = ""
+	local args = {}
+	table.insert(args, cmd)
 	if cmd == "force:apex:test:run" then
-		pre_file = " --synchronous --classnames "
-		filetype = file_name
+		table.insert(args, "--synchronous")
+		table.insert(args, "--classnames")
+		table.insert(args, file_name)
+		table.insert(args, "--json")
 	else
-		pre_file = " -m "
+		table.insert(args, "-m")
 		if extension == "cls" then
 			filetype = "ApexClass"
 		elseif extension == "html" or extension == "js" or extension == "css" then
@@ -17,27 +20,50 @@ sfdx.command_string = function(cmd, extension, file_name)
 		else
 			return "echo 'error: command for this filetype not supported'"
 		end
-		post_file = ":" .. file_name
+		table.insert(args, filetype .. file_name)
 	end
-	return "sfdx " .. cmd .. pre_file .. filetype .. post_file
+	return args
 end
 
-sfdx.execute_command = function(cmd)
+local function terminal_exec(args, display_stdout)
+	local stdout_results = ""
+	local job = Job:new({
+		command = "sfdx",
+		args = args,
+		-- TODO: Redirect the cwd to the buffers pwd
+		cwd = "~/salesforcedev/",
+		enabled_recording = true,
+		on_stdout = function(_, line)
+			stdout_results = stdout_results .. line
+		end,
+		on_exit = function()
+			if display_stdout then
+				print(stdout_results)
+			end
+		end,
+	})
+	job:start()
+end
+
+sfdx.execute_command = function(cmd, on_start_str, on_exit_str, display_stdout)
 	local file_info = filesystem.get_file_info()
-	local cmd_string = sfdx.command_string(cmd, file_info.extension, file_info.file_name)
-	vim.api.nvim_exec(terminal_method .. cmd_string, true)
+	local args = sfdx.cmd_args(cmd, file_info.extension, file_info.file_name)
+	print(on_start_str)
+
+	terminal_exec(args, display_stdout)
+	print(on_exit_str)
 end
 
-sfdx.get_default_username = function(name)
-	vim.api.nvim_exec(terminal_method .. "sfdx config:set defaultusername=" .. name, false)
+sfdx.set_default_username = function(name)
+	terminal_exec({ "config:set", "defaultusername=" .. name, "--json" }, true)
 end
 
 sfdx.deploy = function()
-	sfdx.execute_command("force:source:deploy")
+	sfdx.execute_command("force:source:deploy", "Deploying...", "Successfully Deployed", false)
 end
 
 sfdx.test = function()
-	sfdx.execute_command("force:apex:test:run")
+	sfdx.execute_command("force:apex:test:run", "Testing...", "", true)
 end
 
 return sfdx
