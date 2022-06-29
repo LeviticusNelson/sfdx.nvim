@@ -1,6 +1,6 @@
 # sfdx.nvim
 
-A neovim toolset for sfdx!
+A neovim toolset for sfdx written 100% in lua!
 
 ## About
 
