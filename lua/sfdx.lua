@@ -1,69 +1,104 @@
 local filesystem = require("filesystem")
 local Job = require("plenary.job")
-local Json = require("plenary.json")
+
 local sfdx = {}
 sfdx.cmd_args = function(cmd, extension, file_name)
 	local filetype = ""
 	local args = {}
 	table.insert(args, cmd)
-	if cmd == "force:apex:test:run" then
+	if cmd == "force:apex:test:run" and extension == "cls" then
 		table.insert(args, "--synchronous")
 		table.insert(args, "--classnames")
 		table.insert(args, file_name)
-		table.insert(args, "--json")
 	else
 		table.insert(args, "-m")
 		if extension == "cls" then
-			filetype = "ApexClass"
+			filetype = "ApexClass:"
 		elseif extension == "html" or extension == "js" or extension == "css" then
-			filetype = "LightningComponentBundle"
+			filetype = "LightningComponentBundle:"
 		else
-			return "echo 'error: command for this filetype not supported'"
+			args = {}
+			return args
 		end
 		table.insert(args, filetype .. file_name)
 	end
+	table.insert(args, "--json")
 	return args
 end
 
-local function terminal_exec(args, display_stdout)
+local function print_json(json_str)
+	if json_str == nil or json_str == "" then
+		print("Failed: invalid jq")
+		return
+	end
+	local json_table = vim.fn.json_decode(json_str)
+	if json_table.status == 1 and not json_table.message == nil then
+		print("Failed: " .. json_table.message)
+		return
+	end
+	for key, value in next, json_table do
+		if value == nil or value == "" or value == vim.NIL or key == nil or key == "" then
+			goto continue
+		end
+		if key == "status" then
+			if value == 0 then
+				print("Success")
+			end
+			goto continue
+		end
+		print(key .. ": " .. value)
+		::continue::
+	end
+end
+
+local function terminal_exec(args, result_filter)
 	local stdout_results = ""
+	if next(args) == nil then
+		print("Failure: Entered wrong command for wrong buffer")
+		return
+	end
 	local job = Job:new({
-		command = "sfdx",
-		args = args,
-		-- TODO: Redirect the cwd to the buffers pwd
-		cwd = "~/salesforcedev/",
-		enabled_recording = true,
+		writer = Job:new({
+			command = "sfdx",
+			args = args,
+			cwd = vim.loop.cwd(),
+			enabled_recording = true,
+		}),
+		command = "jq",
+		args = { "-c", result_filter },
 		on_stdout = function(_, line)
 			stdout_results = stdout_results .. line
 		end,
-		on_exit = function()
-			if display_stdout then
-				print(stdout_results)
-			end
-		end,
+		on_exit = function() end,
 	})
 	job:start()
+	job:wait(10000, 50)
+	job:after_success(print_json(stdout_results))
 end
 
-sfdx.execute_command = function(cmd, on_start_str, on_exit_str, display_stdout)
+sfdx.execute_command = function(cmd, result_filter)
 	local file_info = filesystem.get_file_info()
 	local args = sfdx.cmd_args(cmd, file_info.extension, file_info.file_name)
-	print(on_start_str)
 
-	terminal_exec(args, display_stdout)
-	print(on_exit_str)
+	terminal_exec(args, result_filter)
 end
 
 sfdx.set_default_username = function(name)
-	terminal_exec({ "config:set", "defaultusername=" .. name, "--json" }, true)
+	terminal_exec(
+		{ "config:set", "defaultusername=" .. name, "--json" },
+		"{status: .status,name: .result.successes[0].value?, message: .message?}"
+	)
 end
 
 sfdx.deploy = function()
-	sfdx.execute_command("force:source:deploy", "Deploying...", "Successfully Deployed", false)
+	sfdx.execute_command("force:source:deploy", "{status: .status, problem: .result.details.componentFailures[0]?}")
 end
 
 sfdx.test = function()
-	sfdx.execute_command("force:apex:test:run", "Testing...", "", true)
+	sfdx.execute_command(
+		"force:apex:test:run",
+		"{status: .status, outcome: .result.summary.outcome?, testsRan: .result.summary.testsRan?, passing: .result.summary.passing?, failing: .result.summary.failing?, skipped: .result.summary.skipped?, passRate: .result.summary.passRate?,failRate: .result.summary.failRate?}"
+	)
 end
 
 return sfdx

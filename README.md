@@ -16,6 +16,12 @@ use {"leviticusnelson/sfdx.nvim"}
 
 ## Commands
 
+Setting default username:
+
+```
+:SfdxSetUsername {name}
+```
+
 Deploying an apex file or LWC to default org while in buffer (note .xml files are not implemented yet):
 
 ```
@@ -27,3 +33,12 @@ Running a test on the org:
 ```
 :SfdxTest
 ```
+
+## Roadmap (not in order)
+
+- [ ] Make a popup window to view all of the result information
+- [ ] Add more sfdx commands to use
+- [ ] Configure each command with your own args
+- [ ] Add logic for running a command while an .xml file is loaded in buffer
+- [ ] Add soql query execution
+- [ ] Add CI tools for automated testing
