@@ -22,7 +22,7 @@ sfdx.cmd_args = function(cmd, extension, file_name)
 		end
 		table.insert(args, filetype .. file_name)
 	end
-	table.insert(args, "--json")
+	-- table.insert(args, "--json")
 	return args
 end
 
@@ -36,6 +36,12 @@ local function print_json(json_str)
 		print("Failed: " .. json_table.message)
 		return
 	end
+	if json_table.status == 1 and not json_table.result == nil then
+		local failures = json_table.result.details.componentFailures
+		for _, value in next, failures do
+			print(value.problem)
+		end
+	end
 	for key, value in next, json_table do
 		if value == nil or value == "" or value == vim.NIL or key == nil or key == "" then
 			goto continue
@@ -46,34 +52,46 @@ local function print_json(json_str)
 			end
 			goto continue
 		end
-		print(key .. ": " .. value)
+		if type(value) == "table" then
+			value = table.concat(value)
+		end
+		print(value)
 		::continue::
 	end
 end
 
 local function terminal_exec(args, result_filter)
-	local stdout_results = ""
+	-- local stdout_results = ""
 	if next(args) == nil then
 		print("Failure: Entered wrong command for wrong buffer")
 		return
 	end
-	local job = Job:new({
-		writer = Job:new({
-			command = "sfdx",
-			args = args,
-			cwd = vim.loop.cwd(),
-			enabled_recording = true,
-		}),
-		command = "jq",
-		args = { "-c", result_filter },
-		on_stdout = function(_, line)
-			stdout_results = stdout_results .. line
-		end,
-		on_exit = function() end,
-	})
-	job:start()
-	job:wait(10000, 50)
-	job:after_success(print_json(stdout_results))
+
+	local cmd_string = "sfdx "
+
+	for _, value in next, args do
+		cmd_string = cmd_string .. value .. " "
+	end
+
+	vim.api.nvim_exec(":terminal " .. cmd_string, true)
+
+	-- local job = Job:new({
+	-- 	writer = Job:new({
+	-- 		command = "sfdx",
+	-- 		args = args,
+	-- 		cwd = vim.loop.cwd(),
+	-- 		enabled_recording = true,
+	-- 	}),
+	-- 	command = "jq",
+	-- 	args = { "-c", result_filter },
+	-- 	on_stdout = function(_, line)
+	-- 		stdout_results = stdout_results .. line
+	-- 	end,
+	-- 	on_exit = function() end,
+	-- })
+	-- job:start()
+	-- job:wait(20000, 50)
+	-- job:after_success(print_json(stdout_results))
 end
 
 sfdx.execute_command = function(cmd, result_filter)
@@ -91,7 +109,7 @@ sfdx.set_default_username = function(name)
 end
 
 sfdx.deploy = function()
-	sfdx.execute_command("force:source:deploy", "{status: .status, problem: .result.details.componentFailures[0]?}")
+	sfdx.execute_command("force:source:deploy", ".")
 end
 
 sfdx.test = function()
