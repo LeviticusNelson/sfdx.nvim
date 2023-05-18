@@ -4,7 +4,14 @@ local Job = require("plenary.job")
 local sfdx = {}
 sfdx.cmd_args = function(cmd, extension, file_name)
 	local filetype = ""
+  local valuesToRemove = {"Controller", "Helper", "Renderer"}
+  local originalFileName = file_name
 	local args = {}
+
+  for _, value in ipairs(valuesToRemove) do
+    file_name = string.gsub(file_name, value, "")
+  end
+
 	table.insert(args, cmd)
 	if cmd == "force:apex:test:run" and extension == "cls" then
 		table.insert(args, "--synchronous")
@@ -14,9 +21,20 @@ sfdx.cmd_args = function(cmd, extension, file_name)
 		table.insert(args, "-m")
 		if extension == "cls" then
 			filetype = "ApexClass:"
-		elseif extension == "html" or extension == "js" or extension == "css" then
-			filetype = "LightningComponentBundle:"
-		else
+    
+    elseif extension == "page" then
+      filetype = "ApexPage:"
+
+    elseif extension == "trigger" then
+      filetype = "ApexTrigger:"
+
+    elseif extension == "html" or extension == "css" or (extension == "js" and originalFileName == file_name) then
+      filetype = "LightningComponentBundle:"
+
+    elseif originalFileName ~= file_name or extension == "cmp" or extension == "design" then
+      filetype = "AuraDefinitionBundle:"
+
+    else
 			args = {}
 			return args
 		end
@@ -110,6 +128,10 @@ end
 
 sfdx.deploy = function()
 	sfdx.execute_command("force:source:deploy", ".")
+end
+
+sfdx.retrieve = function()
+  sfdx.execute_command("force:source:retrieve", ".")
 end
 
 sfdx.test = function()
