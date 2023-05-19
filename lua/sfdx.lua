@@ -29,7 +29,7 @@ sfdx.cmd_args = function(cmd, extension, file_name)
     elseif extension == "trigger" then
       filetype = "ApexTrigger"
 
-    elseif (originalFileName == file_name and extension == "js") and extension == "html" or extension == "css" then
+    elseif (originalFileName == file_name and extension == "js") or extension == "html" or extension == "css" then
       filetype = "LightningComponentBundle:"
 
     elseif (originalFileName ~= file_name and extension == "js") or extension == "cmp" or extension == "design" then
