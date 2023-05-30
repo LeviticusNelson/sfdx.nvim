@@ -4,18 +4,32 @@ local Job = require("plenary.job")
 local sfdx = {}
 sfdx.cmd_args = function(cmd, extension, file_name)
 	local filetype = ""
+	local valuesToRemove = { "Controller", "Helper", "Renderer" }
+	local originalFileName = file_name
 	local args = {}
+
+	for _, value in ipairs(valuesToRemove) do
+		file_name = string.gsub(file_name, value, "")
+	end
+
 	table.insert(args, cmd)
-	if cmd == "force:apex:test:run" and extension == "cls" then
+	if cmd == "apex run test" and extension == "cls" then
 		table.insert(args, "--synchronous")
-		table.insert(args, "--classnames")
+		table.insert(args, "--code-coverage")
+		table.insert(args, "-n")
 		table.insert(args, file_name)
 	else
 		table.insert(args, "-m")
 		if extension == "cls" then
 			filetype = "ApexClass:"
-		elseif extension == "html" or extension == "js" or extension == "css" then
+		elseif extension == "page" then
+			filetype = "ApexPage:"
+		elseif extension == "trigger" then
+			filetype = "ApexTrigger"
+		elseif (originalFileName == file_name and extension == "js") or extension == "html" or extension == "css" then
 			filetype = "LightningComponentBundle:"
+		elseif (originalFileName ~= file_name and extension == "js") or extension == "cmp" or extension == "design" then
+			filetype = "AuraDefinitionBundle:"
 		else
 			args = {}
 			return args
@@ -26,79 +40,93 @@ sfdx.cmd_args = function(cmd, extension, file_name)
 	return args
 end
 
-local function print_json(json_str)
-	if json_str == nil or json_str == "" then
-		print("Failed: invalid jq")
-		return
-	end
-	local json_table = vim.fn.json_decode(json_str)
-	if json_table.status == 1 and not json_table.message == nil then
-		print("Failed: " .. json_table.message)
-		return
-	end
-	if json_table.status == 1 and not json_table.result == nil then
-		local failures = json_table.result.details.componentFailures
-		for _, value in next, failures do
-			print(value.problem)
-		end
-	end
-	for key, value in next, json_table do
-		if value == nil or value == "" or value == vim.NIL or key == nil or key == "" then
-			goto continue
-		end
-		if key == "status" then
-			if value == 0 then
-				print("Success")
-			end
-			goto continue
-		end
-		if type(value) == "table" then
-			value = table.concat(value)
-		end
-		print(value)
-		::continue::
-	end
-end
-
 local function terminal_exec(args, result_filter)
-	-- local stdout_results = ""
-	if next(args) == nil then
+	if not args or #args == 0 then
 		print("Failure: Entered wrong command for wrong buffer")
 		return
 	end
 
 	local cmd_string = "sfdx "
 
-	for _, value in next, args do
+	for _, value in ipairs(args) do
 		cmd_string = cmd_string .. value .. " "
 	end
 
 	vim.api.nvim_exec(":terminal " .. cmd_string, true)
+end
 
-	-- local job = Job:new({
-	-- 	writer = Job:new({
-	-- 		command = "sfdx",
-	-- 		args = args,
-	-- 		cwd = vim.loop.cwd(),
-	-- 		enabled_recording = true,
-	-- 	}),
-	-- 	command = "jq",
-	-- 	args = { "-c", result_filter },
-	-- 	on_stdout = function(_, line)
-	-- 		stdout_results = stdout_results .. line
-	-- 	end,
-	-- 	on_exit = function() end,
-	-- })
-	-- job:start()
-	-- job:wait(20000, 50)
-	-- job:after_success(print_json(stdout_results))
+local function extractFilePath(filePath, fileType)
+	local directory = filePath:match("(.-/default/)")
+
+	if fileType == "LWC" then
+		directory = directory .. "lwc/"
+	elseif fileType == "Aura" then
+		directory = directory .. "aura/"
+	elseif fileType == "ApexPage" then
+		directory = directory .. "pages/"
+	elseif fileType == "ApexTrigger" then
+		directory = directory .. "triggers/"
+	else
+		directory = directory .. "classes/"
+	end
+
+	return directory
+end
+sfdx.ChooseClass = function(cmd, file_path)
+	local file_types = {
+		["1"] = { type = "ApexClass", cmd = cmd },
+		["2"] = { type = "ApexTrigger", cmd = "apex generate trigger" },
+		["3"] = { type = "ApexPage", cmd = "visualforce generate page" },
+		["4"] = { type = "Aura", cmd = "force:lightning:component:create" },
+		["5"] = { type = "LWC", cmd = "force:lightning:component:create" },
+		["0"] = { type = "Cancel" },
+	}
+
+	local input_type
+	while not file_types[input_type] do
+		print("Select file type:")
+		print("1. Apex Class")
+		print("2. Apex Trigger")
+		print("3. Visualforce Page")
+		print("4. Aura")
+		print("5. LWC")
+		print("0. Cancel")
+		input_type = vim.fn.input("Enter the file type number: \n")
+	end
+
+	if input_type == "0" then
+		return nil
+	end
+
+	local selected_type = file_types[input_type].type
+	local selected_cmd = file_types[input_type].cmd
+	local class_name = vim.fn.input("Enter the class name: ")
+	local directory = extractFilePath(file_path, selected_type)
+
+	if selected_type == "LWC" then
+		return { selected_cmd .. " --type lwc --componentname " .. class_name .. " -d " .. directory }
+	elseif selected_type == "ApexPage" then
+		return { selected_cmd .. " --name " .. class_name .. " --label " .. class_name .. " --outputdir " .. directory }
+	elseif selected_type == "ApexTrigger" then
+		return { selected_cmd .. " --name " .. class_name .. " --outputdir " .. directory }
+	else
+		return { selected_cmd .. " -n " .. class_name .. " -d " .. directory }
+	end
 end
 
 sfdx.execute_command = function(cmd, result_filter)
 	local file_info = filesystem.get_file_info()
-	local args = sfdx.cmd_args(cmd, file_info.extension, file_info.file_name)
-
+	local args
+	if cmd == "force:apex:class:create" then
+		args = sfdx.ChooseClass(cmd, file_info.file_path)
+	else
+		args = sfdx.cmd_args(cmd, file_info.extension, file_info.file_name)
+	end
 	terminal_exec(args, result_filter)
+end
+
+sfdx.createClass = function()
+	sfdx.execute_command("force:apex:class:create", ".")
 end
 
 sfdx.set_default_username = function(name)
@@ -109,13 +137,17 @@ sfdx.set_default_username = function(name)
 end
 
 sfdx.deploy = function()
-	sfdx.execute_command("force:source:deploy", ".")
+	sfdx.execute_command("project deploy start --ignore-conflicts", ".")
+end
+
+sfdx.retrieve = function()
+	sfdx.execute_command("project retrieve start --ignore-conflicts", ".")
 end
 
 sfdx.test = function()
 	sfdx.execute_command(
-		"force:apex:test:run",
-		"{status: .status, outcome: .result.summary.outcome?, testsRan: .result.summary.testsRan?, passing: .result.summary.passing?, failing: .result.summary.failing?, skipped: .result.summary.skipped?, passRate: .result.summary.passRate?,failRate: .result.summary.failRate?}"
+		"apex run test",
+		"{status: .status, coverage: .result.summary.coverage?, outcome: .result.summary.outcome?, testsRan: .result.summary.testsRan?, passing: .result.summary.passing?, failing: .result.summary.failing?, skipped: .result.summary.skipped?, passRate: .result.summary.passRate?,failRate: .result.summary.failRate?}"
 	)
 end
 
