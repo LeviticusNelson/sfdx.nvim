@@ -13,4 +13,7 @@ vim.api.nvim_create_user_command("SfdxDeploy", sfdx.deploy, {})
 vim.api.nvim_create_user_command("SfdxRetrieve", sfdx.retrieve, {})
 vim.api.nvim_create_user_command("SfdxTest", sfdx.test, {})
 vim.api.nvim_create_user_command("SfdxCreateclass", sfdx.createClass, {})
+vim.api.nvim_create_user_command("SfdxAuthorize", sfdx.authorize, {})
+vim.api.nvim_create_user_command("SfdxcreateProject", sfdx.createProject, {})
+
 
