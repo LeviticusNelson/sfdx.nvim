@@ -1,8 +1,9 @@
 local filesystem = require("filesystem")
 local Job = require("plenary.job")
+require("nvterm").setup()
 
 local sfdx = {}
-sfdx.cmd_args = function(cmd, extension, file_name)
+local function cmd_args(cmd, extension, file_name)
 	local filetype = ""
 	local valuesToRemove = { "Controller", "Helper", "Renderer" }
 	local originalFileName = file_name
@@ -52,7 +53,9 @@ local function terminal_exec(args, result_filter)
 		cmd_string = cmd_string .. value .. " "
 	end
 
-	vim.api.nvim_exec(":terminal " .. cmd_string, true)
+	--vim.api.nvim_exec(":terminal " .. cmd_string, true)
+
+  require("nvterm.terminal").send(cmd_string, "horizontal")
 end
 
 local function extractFilePath(filePath, fileType)
@@ -72,7 +75,8 @@ local function extractFilePath(filePath, fileType)
 
 	return directory
 end
-sfdx.ChooseClass = function(cmd, file_path)
+
+local function ChooseClass(cmd, file_path)
 	local file_types = {
 		["1"] = { type = "ApexClass", cmd = cmd },
 		["2"] = { type = "ApexTrigger", cmd = "apex generate trigger" },
@@ -114,14 +118,56 @@ sfdx.ChooseClass = function(cmd, file_path)
 	end
 end
 
+local function authorizeOrg(cmd)
+  local orgAlias = vim.fn.input("Enter an org alias: ")
+  local orgUrl = vim.fn.input("Enter a custom login or leave blank to use the default: ")
+
+local start_pos = vim.fn.getpos("'<")
+local end_pos = vim.fn.getpos("'>")
+
+local lines = {}
+for i = start_pos[2], end_pos[2] do
+  table.insert(lines, vim.fn.getline(i))
+end
+
+local selected_text = table.concat(lines, "\n")
+
+print(selected_text)
+  
+  if orgUrl ~= nil and orgUrl ~= "" then
+    return { cmd .. " -a " .. orgAlias .. " --instanceurl " .. orgUrl}
+  else
+    return { cmd .. " -a " .. orgAlias}
+  end
+end
+
+local function createProject(cmd)
+  local projectName = vim.fn.input("Enter a project name: ")
+  local projectDir = vim.fn.input("Enter a directory to create: ")
+  
+  if projectDir ~= nil and projectDir ~= "" then
+    return { cmd .. " -n " .. projectName .. " --manifest -d " .. projectDir}
+  else
+    return { cmd .. " -n " .. projectName .. " --manifest"}
+  end
+end
+
 sfdx.execute_command = function(cmd, result_filter)
 	local file_info = filesystem.get_file_info()
 	local args
-	if cmd == "force:apex:class:create" then
-		args = sfdx.ChooseClass(cmd, file_info.file_path)
-	else
-		args = sfdx.cmd_args(cmd, file_info.extension, file_info.file_name)
+	
+  if cmd == "force:apex:class:create" then
+		args = ChooseClass(cmd, file_info.file_path)
+	elseif cmd == "org login web" then
+    args = authorizeOrg(cmd)
+  elseif cmd =="project generate" then 
+    args = createProject(cmd)
+  elseif cmd == "" then
+    args = execute()
+  else
+		args = cmd_args(cmd, file_info.extension, file_info.file_name)
 	end
+
 	terminal_exec(args, result_filter)
 end
 
@@ -136,8 +182,20 @@ sfdx.set_default_username = function(name)
 	)
 end
 
+sfdx.authorize = function()
+  sfdx.execute_command("org login web", ".")
+end
+
+sfdx.createProject = function()
+  sfdx.execute_command("project generate", ".")
+end
+
 sfdx.deploy = function()
 	sfdx.execute_command("project deploy start --ignore-conflicts", ".")
+end
+
+sfdx.execute = function()
+  sfdx.execute_command("", ".")
 end
 
 sfdx.retrieve = function()
@@ -151,4 +209,6 @@ sfdx.test = function()
 	)
 end
 
+
 return sfdx
+
